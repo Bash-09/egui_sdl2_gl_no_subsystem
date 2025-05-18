@@ -9,9 +9,12 @@ pub mod painter;
 #[cfg(feature = "use_epi")]
 pub use epi;
 use painter::Painter;
-use std::os::raw::c_void;
 #[cfg(feature = "use_epi")]
 use std::time::Instant;
+use std::{
+    ffi::CStr,
+    os::raw::{c_int, c_void},
+};
 use {
     egui::*,
     sdl2::{
@@ -131,7 +134,7 @@ impl EguiStateHandler {
 
     pub fn process_input(
         &mut self,
-        window: &sdl2::video::Window,
+        window: *mut sdl2::sys::SDL_Window,
         event: sdl2::event::Event,
         painter: &mut Painter,
     ) {
@@ -161,7 +164,7 @@ impl EguiStateHandler {
 }
 
 pub fn input_to_egui(
-    window: &sdl2::video::Window,
+    window: *mut sdl2::sys::SDL_Window,
     event: sdl2::event::Event,
     painter: &mut Painter,
     state: &mut EguiStateHandler,
@@ -169,7 +172,8 @@ pub fn input_to_egui(
     use sdl2::event::Event::*;
 
     let pixels_per_point = painter.pixels_per_point;
-    if event.get_window_id() != Some(window.id()) {
+    let window_id = unsafe { sdl2::sys::SDL_GetWindowID(window) };
+    if !event.get_window_id().is_some_and(|id| id == window_id) {
         return;
     }
     match event {
@@ -178,7 +182,13 @@ pub fn input_to_egui(
             win_event: WindowEvent::Resized(_, _) | WindowEvent::SizeChanged(_, _),
             ..
         } => {
-            painter.update_screen_rect(window.drawable_size());
+            let drawable_size = {
+                let mut w: c_int = 0;
+                let mut h: c_int = 0;
+                unsafe { sdl2::sys::SDL_GL_GetDrawableSize(window, &mut w, &mut h) };
+                (w as u32, h as u32)
+            };
+            painter.update_screen_rect(drawable_size);
             state.input.screen_rect = Some(painter.screen_rect);
         }
 
@@ -310,7 +320,20 @@ pub fn input_to_egui(
                 state.input.events.push(Event::Cut);
             } else if state.modifiers.command && key == Key::V {
                 // println!("paste");
-                if let Ok(contents) = window.subsystem().clipboard().clipboard_text() {
+                let clipboard_text = {
+                    unsafe {
+                        let buf = sdl2::sys::SDL_GetClipboardText();
+
+                        if buf.is_null() {
+                            Err(0)
+                        } else {
+                            let s = CStr::from_ptr(buf as *const _).to_str().unwrap().to_owned();
+                            sdl2::sys::SDL_free(buf as *mut c_void);
+                            Ok(s)
+                        }
+                    }
+                };
+                if let Ok(contents) = clipboard_text {
                     state.input.events.push(Event::Text(contents));
                 }
             }
