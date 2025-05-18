@@ -9,6 +9,7 @@ pub mod painter;
 #[cfg(feature = "use_epi")]
 pub use epi;
 use painter::Painter;
+use std::os::raw::c_void;
 #[cfg(feature = "use_epi")]
 use std::time::Instant;
 use {
@@ -83,17 +84,18 @@ pub struct EguiStateHandler {
     pub native_pixels_per_point: f32,
 }
 
-pub fn with_sdl2(
-    window: &sdl2::video::Window,
+pub fn with_sdl2<F>(
+    width: u32,
+    height: u32,
+    gl_get_proc_address: F,
     shader_ver: ShaderVersion,
     scale: DpiScaling,
-) -> (Painter, EguiStateHandler) {
+) -> (Painter, EguiStateHandler)
+where
+    F: FnMut(&str) -> *const c_void,
+{
     let standard_dpi = 96.0;
-    let display_dpi =
-        window
-            .subsystem()
-            .display_dpi(0)
-            .unwrap_or((standard_dpi, standard_dpi, standard_dpi));
+    let display_dpi = (standard_dpi, standard_dpi, standard_dpi);
     let dpi_scale = standard_dpi / display_dpi.0;
     let normalized_scale = 1.0 / dpi_scale;
     let default_scale = dpi_scale * normalized_scale;
@@ -101,7 +103,7 @@ pub fn with_sdl2(
         DpiScaling::Default => default_scale,
         DpiScaling::Custom(custom) => default_scale * custom,
     };
-    let painter = painter::Painter::new(window, scale, shader_ver);
+    let painter = painter::Painter::new(width, height, scale, shader_ver, gl_get_proc_address);
     let state_handler = EguiStateHandler::new(&painter);
     (painter, state_handler)
 }

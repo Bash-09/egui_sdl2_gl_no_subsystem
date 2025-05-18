@@ -12,6 +12,7 @@ use egui::{
 use gl::types::{GLchar, GLenum, GLint, GLsizeiptr, GLsync, GLuint};
 use std::convert::TryInto;
 use std::ffi::CString;
+use std::os::raw::c_void;
 
 const DEFAULT_VERT_SRC: &str = include_str!("../shaders/default.vert");
 const DEFAULT_FRAG_SRC: &str = include_str!("../shaders/default.frag");
@@ -114,9 +115,18 @@ pub fn link_program(vs: GLuint, fs: GLuint) -> GLuint {
 }
 
 impl Painter {
-    pub fn new(window: &sdl2::video::Window, scale: f32, shader_ver: ShaderVersion) -> Painter {
+    pub fn new<F>(
+        width: u32,
+        height: u32,
+        scale: f32,
+        shader_ver: ShaderVersion,
+        get_proc_address: F,
+    ) -> Painter
+    where
+        F: FnMut(&str) -> *const c_void,
+    {
         unsafe {
-            gl::load_with(|name| window.subsystem().gl_get_proc_address(name) as *const _);
+            gl::load_with(get_proc_address);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
@@ -142,7 +152,6 @@ impl Painter {
             gl::GenBuffers(1, &mut vertex_buffer);
             assert!(vert_shader > 0);
 
-            let (width, height) = window.size();
             let pixels_per_point = scale;
             let rect = vec2(width as f32, height as f32) / pixels_per_point;
             let screen_rect = Rect::from_min_size(Pos2::new(0f32, 0f32), rect);
